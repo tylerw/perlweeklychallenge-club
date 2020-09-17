@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+
+###
+# shell original
+#   eval "$(git for-each-ref 'refs/heads/tw/*' -s --format 'git for-each-ref --points-at=%(objectname) --format "%%(refname)"')" | awk '!/^refs\/heads/'
+###
+
+import sys
+from subprocess import run
+from itertools import groupby
+from operator import itemgetter
+
+COMBINING_LOW_LINE = '\u0332'
+
+def main(args=None):
+    if args is None:
+        args = sys.argv[1:]
+
+    cmd = ['git', 'for-each-ref', 'refs/heads/tw/*', '--shell', '--format',
+            'git for-each-ref --points-at=%(objectname) --format "%%(objectname) %%(refname)";']
+    proc = run(cmd, capture_output=True, check=True)
+    proc2 = run(proc.stdout, shell=True, capture_output=True, check=True)
+
+    lines = [x.decode('utf-8').split() for x in proc2.stdout.splitlines()]
+    for k, g in groupby(lines, itemgetter(0)):
+        print(f'{COMBINING_LOW_LINE.join(k + ":")}')
+        for _, refname in g:
+            print(refname)
+        print('\n')
+
+if __name__ == '__main__':
+    sys.exit(main())
