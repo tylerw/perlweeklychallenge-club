@@ -1,0 +1,41 @@
+#!/usr/bin/env bb
+
+(require '[clojure.string :as str]
+         '[babashka.process :refer [process $ check]])
+
+(def rsync-copy
+  '[rsync --verbose --progress --human-readable --compress --archive
+    --hard-links --one-file-system])
+
+(defn get-latest-tag
+  "Get the most recently created tag"
+  []
+  (-> (process '[git for-each-ref refs/tags --sort=-committerdate
+                 "--format=%(refname)"  --count=1])
+      :out slurp
+      (str/replace #"^refs/tags/(.+)\n$" "$1")))
+
+(defn get-dirs
+  "Get the old and new directories."
+  [tag]
+  (let [challenge (->> tag
+                       (re-matches #"^[^\d]+(\d+$)")
+                       second
+                       (#(Integer/parseInt %)))]
+    (->> challenge
+         ((juxt dec identity))
+         (map #(format "challenge-%03d/tyler-wardhaugh/" %)))))
+
+(defn -main
+  "Prepare for the next Challenge"
+  [& args]
+  (let [tag (get-latest-tag)
+        [old new] (get-dirs tag)
+        cmd (concat rsync-copy
+                    '[-f ".,- .rsync-filter-excludes"]
+                    [old new])]
+    (do @(process cmd {:out :inherit})
+        nil)))
+
+(-main)
+;vim: ft=clojure
