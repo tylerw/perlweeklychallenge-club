@@ -1,6 +1,7 @@
 #!/usr/bin/env bb
 
 (require '[clojure.string :as str]
+         '[clojure.pprint :refer [cl-format]]
          '[babashka.process :refer [process $ check]])
 
 (def rsync-copy
@@ -34,8 +35,9 @@
         cmd (concat rsync-copy
                     '[-f ".,- .rsync-filter-excludes"]
                     [old new])]
+    (cl-format true "Running: [[~{~s~^ ~}]]~%" cmd)
     (do @(process cmd {:out :inherit})
         nil)))
 
-(-main)
-;vim: ft=clojure
+(when (= *file* (System/getProperty "babashka.file"))
+  (-main))
