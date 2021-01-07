@@ -2,6 +2,7 @@
 
 (require '[clojure.string :as str]
          '[clojure.pprint :refer [cl-format]]
+         '[clojure.tools.cli :refer [parse-opts]]
          '[babashka.process :refer [process $ check]])
 
 (def rsync-copy
@@ -18,26 +19,64 @@
 
 (defn get-dirs
   "Get the old and new directories."
-  [tag]
+  [tag copy-source]
   (let [challenge (->> tag
                        (re-matches #"^[^\d]+(\d+$)")
                        second
-                       (#(Integer/parseInt %)))]
-    (->> challenge
-         ((juxt dec identity))
+                       (#(Integer/parseInt %)))
+        prev-challenge (if (neg? copy-source)
+                         (+ challenge copy-source)
+                         copy-source)]
+    (->> [prev-challenge challenge]
          (map #(format "challenge-%03d/tyler-wardhaugh/" %)))))
+
+(def cli-options
+  [["-s" "--copy-source CHALLENGE" "a challenge to source files from"
+    ; Negative numbers are treated as negative offsets, -1 (meaning the previous challenge) is the default.
+    :default -1
+    :parse-fn #(Integer/parseInt %)
+    :validate [#(not (zero? %)) "Must refer to an existing challenge directory."]]
+   ["-h" "--help"]])
+
+(defn error-msg [errors]
+  (str "The following errors occurred while parsing your command:\n\n"
+       (str/join \newline errors)))
+
+(defn exit [status msg]
+  (println msg)
+  (System/exit status))
+
+(defn usage [options-summary]
+  (cl-format nil "usage: ~a [options]~2%options:~%~a~%"
+             (-> *file* io/file .getName)
+             options-summary))
+
+(defn validate-args
+  "Validate command line arguments. Either return a map indicating the program
+  should exit (with a error message, and optional ok status), or a map
+  indicating the action the program should take and the options provided."
+  [args]
+  (let [{:keys [options arguments errors summary]} (parse-opts args cli-options)]
+    (cond
+      (:help options) {:exit-message (usage summary) :ok? true}
+      errors {:exit-message (error-msg errors)}
+      :else {:options options})))
 
 (defn -main
   "Prepare for the next Challenge"
   [& args]
-  (let [tag (get-latest-tag)
-        [old new] (get-dirs tag)
-        cmd (concat rsync-copy
-                    '[-f ".,- .rsync-filter-excludes"]
-                    [old new])]
-    (cl-format true "Running: [[~{~s~^ ~}]]~%" cmd)
-    (do @(process cmd {:out :inherit})
-        nil)))
+  (let [{:keys [action options exit-message ok?]} (validate-args args)]
+    (if exit-message
+      (exit (if ok? 0 1) exit-message)
+      (let [copy-source (:copy-source options)
+            tag (get-latest-tag)
+            [old new] (get-dirs tag copy-source)
+            cmd (concat rsync-copy
+                        '[-f ".,- .rsync-filter-excludes"]
+                        [old new])]
+      (cl-format true "Running: [[~{~s~^ ~}]]~%" cmd)
+      (do @(process cmd {:out :inherit})
+          nil)))))
 
 (when (= *file* (System/getProperty "babashka.file"))
-  (-main))
+  (apply -main *command-line-args*))
