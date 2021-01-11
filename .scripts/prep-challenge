@@ -9,26 +9,40 @@
   '[rsync --verbose --progress --human-readable --compress --archive
     --hard-links --one-file-system])
 
-(defn get-latest-tag
+(defn get-challenge-from-latest-tag
   "Get the most recently created tag"
   []
-  (-> (process '[git for-each-ref refs/tags --sort=-committerdate
-                 "--format=%(refname)"  --count=1])
-      :out slurp
-      (str/replace #"^refs/tags/(.+)\n$" "$1")))
+  (let [fulltag (-> (process '[git for-each-ref refs/tags --sort=-committerdate
+                               "--format=%(refname)"  --count=1])
+                    :out slurp
+                    (str/replace #"^refs/tags/(.+)\n$" "$1"))]
+    (->> fulltag
+         (re-matches #"^[^\d]+(\d+$)")
+         second
+         (#(Integer/parseInt %)))))
 
-(defn get-dirs
+(defn get-tw-dirs
   "Get the old and new directories."
-  [tag copy-source]
-  (let [challenge (->> tag
-                       (re-matches #"^[^\d]+(\d+$)")
-                       second
-                       (#(Integer/parseInt %)))
-        prev-challenge (if (neg? copy-source)
-                         (+ challenge copy-source)
-                         copy-source)]
-    (->> [prev-challenge challenge]
-         (map #(format "challenge-%03d/tyler-wardhaugh/" %)))))
+  [prev-challenge challenge]
+  (->> [prev-challenge challenge]
+       (map #(format "challenge-%03d/tyler-wardhaugh/" %))))
+
+(defn rename-clojure-resources
+  [new prev-challenge challenge]
+  (let [gen-classdir (fn [tail]
+                       (io/file (format "%s/clojure/src/tw/weekly/c%d" new tail)))
+        gen-testfile (fn [part]
+                       (io/file (format "%s/clojure/test/tw/weekly/c%d_test.clj" new part)))]
+    (.renameTo (gen-classdir prev-challenge) (gen-classdir challenge))
+    (.renameTo (gen-testfile prev-challenge) (gen-testfile challenge))))
+
+(defn rsync-prev-files
+  [old new]
+  (let [cmd (concat rsync-copy
+                    '[-f ".,- .rsync-filter-excludes"]
+                    [old new])]
+    (cl-format true "Running: [[~{~s~^ ~}]]~%" cmd)
+    @(process cmd {:out :inherit})))
 
 (def cli-options
   [["-s" "--copy-source CHALLENGE" "a challenge to source files from"
@@ -69,14 +83,14 @@
     (if exit-message
       (exit (if ok? 0 1) exit-message)
       (let [copy-source (:copy-source options)
-            tag (get-latest-tag)
-            [old new] (get-dirs tag copy-source)
-            cmd (concat rsync-copy
-                        '[-f ".,- .rsync-filter-excludes"]
-                        [old new])]
-      (cl-format true "Running: [[~{~s~^ ~}]]~%" cmd)
-      (do @(process cmd {:out :inherit})
-          nil)))))
+            challenge (get-challenge-from-latest-tag)
+            prev-challenge (if (neg? copy-source)
+                             (+ challenge copy-source)
+                             copy-source)
+            [old new] (get-tw-dirs prev-challenge challenge)]
+        (do (rsync-prev-files old new)
+            (rename-clojure-resources new prev-challenge challenge)
+            nil)))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (apply -main *command-line-args*))
