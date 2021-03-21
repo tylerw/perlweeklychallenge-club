@@ -16,3 +16,7 @@ prep-for-challenge: ## prep for next challenge
 .PHONEY: my-prs
 my-prs: ## list my prs
 	@.scripts/my-prs
+
+.PHONEY: open-my-repo
+open-my-repo: ## open my repo's GitHub page in a web browser
+	@gh repo view tylerw/perlweeklychallenge-club --web
