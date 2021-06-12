@@ -30,6 +30,9 @@
             (let [bb-cmd (format "bb -m %s " (get-task-ns task))]
               (shell (apply str bb-cmd args)))))
 
+  clean {:doc "Clean out temporary files"
+         :task (run! fs/delete-tree [".nrepl-port" ".cpcache" ".lsp"])}
+
   test {:doc "Run tests"
         :task (clojure "-M:test:runner")}
 
@@ -58,7 +61,6 @@
                    (run 'task-1-bb)
                    (println "\nTask 2:")
                    (run 'task-2-bb))}
-
 
   publish {:doc "Publish branch via git-push to REPO (default: origin)"
            :requires ([clojure.string :as str]
